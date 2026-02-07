@@ -1,0 +1,36 @@
+# registry.yml
+registry_version: 1
+
+# Global conventions used by writer/runner
+conventions:
+  audit_columns:
+    - { name: ingest_ts,    type: timestamp }
+    - { name: run_id,       type: string }
+    - { name: source_system,type: string }
+    - { name: source_object,type: string }
+    - { name: ingest_mode,  type: string }
+
+# Defaults applied to all objects unless overridden
+defaults:
+  schedule:
+    enabled: true
+
+  # DQ: keep aligned to MVP dq_executor.py supported checks:
+  # - row_count_min
+  # - not_null
+  # - duplicates
+  dq:
+    ruleset: bronze_minimal   # must exist in dq_rulesets.yml
+    action_on_fail: warn      # warn|fail (MVP)
+
+  ingestion:
+    max_retries: 4
+    retry_backoff_seconds: 5
+    merge_when_pk_present: true
+
+# Optional compile-time env placeholders (overlaid by env/dev.yml etc)
+# env:
+#   catalog: main_dev
+#   bronze_schema: bronze
+#   secret_scope: my_secret_scope
+#   landing_base_path: "abfss://landing@<storage>.dfs.core.windows.net"

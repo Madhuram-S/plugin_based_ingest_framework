@@ -1,0 +1,58 @@
+# sources_file_ingestion.yml
+sources:
+  - source_system: commercial_insurance
+    source_type: file
+    connection: adls_ins
+    enabled: true
+    priority: P0
+
+    defaults:
+      schedule:
+        enabled: true
+        group: P0_file_based
+        cron: "0 */6 * * *"
+        timezone: "America/New_York"
+
+      target:
+        catalog: "${env.catalog}"
+        schema: "${env.bronze_schema}"
+        table_prefix: "ins_"
+
+      # File incremental should be driven by checkpoint (Auto Loader), not watermark in-row (MVP)
+      incremental:
+        mode: file_autoloader
+
+      landing:
+        format: csv
+        options:
+          header: "true"
+          inferSchema: "true"
+        # checkpoint and schema_location are derived by loader if not explicitly provided
+
+      write:
+        mode: overwrite        # default for file snapshots (safe MVP)
+        primary_key: []        # overwrite doesn’t need PK
+
+      dq:
+        ruleset: bronze_minimal
+        action_on_fail: warn
+
+    objects:
+      - name: accounts
+        # Optional explicit landing path (if omitted, loader derives from connections.root_path + name)
+        landing:
+          path: "${env.landing_base_path}/00_commercial_insurance/accounts"
+        write:
+          mode: append
+      - name: brokers
+        # Optional explicit landing path (if omitted, loader derives from connections.root_path + name)
+        landing:
+          path: "${env.landing_base_path}/00_commercial_insurance/brokers"
+        write:
+          mode: overwrite
+      - name: claims
+        # Optional explicit landing path (if omitted, loader derives from connections.root_path + name)
+        landing:
+          path: "${env.landing_base_path}/00_commercial_insurance/claims"
+        write:
+          mode: overwrite

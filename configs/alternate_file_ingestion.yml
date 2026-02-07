@@ -1,0 +1,62 @@
+object_id: "fin.ap_invoices"
+source_type: "file"
+source_system: "vendor_fin"
+object_name: "ap_invoices"
+enabled: true
+schedule_group: "P1_files"
+
+landing:
+  path: "${env.landing_root}/vendor_fin/ap_invoices/"
+  format: "csv"
+  options:
+    header: "true"
+    delimiter: ","
+
+manifest:
+  enabled: true
+  hash:
+    enabled: true
+    algorithm: "sha256"
+  listing:
+    recursive: true
+    max_files_per_run: 500
+  replay:
+    replace_by_file: true
+
+bronze:
+  table: "${env.catalog}.bronze.vendor_fin_ap_invoices"
+  write_mode: "append"
+  delete_by_file: true   # replace-by-file
+  file_path_column: "_file_path"
+
+# Example:
+# object_id: "hr.benefits_enrollment"
+# source_type: "file"
+# source_system: "vendor_hr"
+# object_name: "benefits_enrollment"
+# enabled: true
+# schedule_group: "P1_files"
+
+# landing:
+#   path: "${env.landing_root}/vendor_hr/benefits_enrollment/"
+#   format: "excel"
+#   excel:
+#     sheet_name: "Sheet1"
+#     header: true
+
+# manifest:
+#   enabled: true
+#   hash:
+#     enabled: true
+#     algorithm: "sha256"
+#   listing:
+#     recursive: true
+#     max_files_per_run: 200
+#   replay:
+#     replace_by_file: true
+
+# bronze:
+#   table: "${env.catalog}.bronze.vendor_hr_benefits_enrollment"
+#   write_mode: "append"
+#   delete_by_file: true
+#   file_path_column: "_file_path"

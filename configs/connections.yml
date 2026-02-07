@@ -1,0 +1,43 @@
+connections:
+  adls_ins:
+    type: file   
+    root_path: ${env.landing_base_path}
+    auth: 
+      mode: abfss
+      storage_name: "${env.storage_name}"      
+      secret_ref:
+        scope: "${env.secret_scope}"
+        # key: ${env.storage_name}-accesskey
+        key: adls-client-id
+
+  # bigquery_prod:
+  #   type: bigquery
+  #   auth:
+  #     mode: service_account_json
+  #     secret_ref:
+  #       scope: "{{env.secret_scope}}"
+  #       key: "gcp_sa_json"
+
+  # api_harvest:
+  #   type: api
+  #   auth:
+  #     mode: oauth2_refresh_token
+  #     secret_ref:
+  #       scope: "{{env.secret_scope}}"
+  #       client_id_key: "harvest_client_id"
+  #       client_secret_key: "harvest_client_secret"
+  #       refresh_token_key: "harvest_refresh_token"
+  #   options:
+  #     base_url: "https://api.harvestapp.com"
+
+  # sql_hr:
+  #   type: sql
+  #   auth:
+  #     mode: jdbc_user_password
+  #     secret_ref:
+  #       scope: "{{env.secret_scope}}"
+  #       username_key: "hr_db_user"
+  #       password_key: "hr_db_pwd"
+  #   options:
+  #     jdbc_url: "jdbc:sqlserver://<host>:1433;databaseName=<db>"
+  #     driver: "com.microsoft.sqlserver.jdbc.SQLServerDriver"

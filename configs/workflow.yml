@@ -1,0 +1,17 @@
+# This yaml is the primary entry point for ETL
+# It orchestrates the flow of actions that will be need to ingest data from various sources
+
+resources:
+    jobs:
+        main_workflow:
+        name: insurance_workflow_madhu
+        tasks:
+            - task_key: insurance_bronze_pipeline
+              pipeline_task:
+                pipeline_id: ${resources.pipelines.insurance_bronze_pipeline.id}
+                full_refresh: false
+        job_clusters:
+            - job_cluster_key: job_cluster
+                new_cluster:
+                    node_type_id: i3.small
+                    spark_version: 13.3.x-scala2.12

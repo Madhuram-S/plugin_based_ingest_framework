@@ -1,0 +1,29 @@
+# dq_rulesets.yml
+dq_rulesets:
+  bronze_minimal:
+    description: "Lowest bar for Bronze MVP: ensure data landed."
+    on_fail: warn
+    checks:
+      - name: row_count_non_zero
+        type: row_count_min
+        min: 1
+        severity: warn
+
+  bronze_pk_guard:
+    description: "Use when you do MERGE and have PK defined."
+    on_fail: warn
+    checks:
+      - name: row_count_non_zero
+        type: row_count_min
+        min: 1
+        severity: warn
+
+      - name: primary_key_not_null
+        type: not_null
+        columns: "{{primary_key}}"
+        severity: fail
+
+      - name: primary_key_duplicates
+        type: duplicates
+        columns: "{{primary_key}}"
+        severity: warn
