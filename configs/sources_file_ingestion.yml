@@ -1,6 +1,6 @@
 # sources_file_ingestion.yml
 sources:
-  - source_system: commercial_insurance
+  - source_system: commerical_insurance
     source_type: file
     connection: adls_ins
     enabled: true
@@ -27,11 +27,15 @@ sources:
         options:
           header: "true"
           inferSchema: "true"
-        # checkpoint and schema_location are derived by loader if not explicitly provided
+          delimiter: ","
+        
 
       write:
         mode: overwrite        # default for file snapshots (safe MVP)
         primary_key: []        # overwrite doesn’t need PK
+        overwriteSchema: "merge"
+        partition_by: ["ingest_dt"]
+        schema_evolution: "mergeSchema"
 
       dq:
         ruleset: bronze_minimal
@@ -42,8 +46,11 @@ sources:
         # Optional explicit landing path (if omitted, loader derives from connections.root_path + name)
         landing:
           path: "${env.landing_base_path}/00_commercial_insurance/accounts"
+        
         write:
-          mode: append
+          mode: "merge"
+          primary_key: ["account_id"]
+          
       - name: brokers
         # Optional explicit landing path (if omitted, loader derives from connections.root_path + name)
         landing:

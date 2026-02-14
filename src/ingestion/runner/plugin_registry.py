@@ -9,4 +9,5 @@ def build_plugin_registry(spark, dbutils, writer, state_store) -> Dict[str, Any]
         "api": ApiPlugin(spark, dbutils),
         "file": FilePlugin(spark, dbutils),
         # "sql": SqlPlugin(spark, dbutils),  # add later
+        # "excel": ExcelPlugin()
     }

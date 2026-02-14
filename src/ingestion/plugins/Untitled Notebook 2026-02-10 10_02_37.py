@@ -1,10 +1,14 @@
-# file_plugin.py
+# Databricks notebook source
 from __future__ import annotations
 
 from typing import Any, Dict
 from pyspark.sql import functions as F
 
 from src.ingestion.runner.plugin_contract import IngestResult
+
+# COMMAND ----------
+
+
 
 class FilePlugin:
     """
@@ -40,8 +44,9 @@ class FilePlugin:
             status="SUCCESS",
             ingest_mode="FILE_BATCH",
             df=df,
-            row_count_source=df.count(),
-            next_state={},
+            row_count_source=None,
+            next_state={"last_modified_date":'2026-02-10'},
             artifacts={"source": "file", "path": path, "format": fmt},
             warnings=[],
         )
+

@@ -4,6 +4,7 @@ registry_version: 1
 # Global conventions used by writer/runner
 conventions:
   audit_columns:
+    - { name: ingest_dt,    type: date }
     - { name: ingest_ts,    type: timestamp }
     - { name: run_id,       type: string }
     - { name: source_system,type: string }

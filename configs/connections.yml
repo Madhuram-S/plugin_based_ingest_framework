@@ -9,7 +9,7 @@ connections:
         scope: "${env.secret_scope}"
         # key: ${env.storage_name}-accesskey
         key: adls-client-id
-
+        
   # bigquery_prod:
   #   type: bigquery
   #   auth:
