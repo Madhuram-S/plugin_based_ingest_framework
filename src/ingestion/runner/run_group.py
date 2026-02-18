@@ -199,6 +199,7 @@ def _run_one_object(
         write_cfg = obj_resolved.get("write", {}) or {}
         write_mode = write_cfg.get("mode", "append")
         pk = write_cfg.get("primary_key", []) or []
+        partition = write_cfg.get("partition_by", []) or []
 
         rows_read = result.row_count_source or None
         rows_written = writer.write(df, obj_resolved["bronze_table"], write_mode, pk)
