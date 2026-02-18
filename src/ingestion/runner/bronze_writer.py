@@ -26,11 +26,11 @@ class BronzeWriter:
         mode = (mode or "append").lower()
 
         if mode == "overwrite":
-            df.write.format("delta").mode("overwrite").saveAsTable(target_table)
+            df.write.format("delta").mode("overwrite").option("mergeSchema","true").saveAsTable(target_table)
             return df.count()
 
         if mode == "append" or not primary_key:
-            df.write.format("delta").mode("append").saveAsTable(target_table)
+            df.write.format("delta").mode("append").option("mergeSchema","true").saveAsTable(target_table)
             return df.count()
 
         # Merge (upsert)

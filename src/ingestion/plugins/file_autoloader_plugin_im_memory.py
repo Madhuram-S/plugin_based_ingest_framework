@@ -1,27 +1,42 @@
 # file_autoloader_plugin.py
 """
 Auto Loader–based file ingestion for CSV, JSON, Parquet, and Avro.
-Uses Spark Structured Streaming with cloudFiles source and trigger(once=True)
-to read only new files since last run (checkpoint). Fits the runner framework:
-extract(run_ctx, obj_cfg, prior_state) -> IngestResult with batch DataFrame.
+Uses Spark Structured Streaming with cloudFiles source, trigger(once=True),
+and a Delta micro-batch sink (foreachBatch). Each micro-batch is written with
+run_id and batch_id; we read back all rows for the current run_id and return
+them (all micro-batches in this run). No in-memory sink.
+
+JSON: Ingested as raw text (one line = one row). Bronze gets a single string
+column `raw_json`; no parsing or schema inference, so no UnknownFieldException.
+Parse in silver with from_json(raw_json, schema) or schema_of_json. Use
+JSON Lines (one JSON object per line) for one record per row.
 """
 from __future__ import annotations
 
-import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from pyspark.sql import DataFrame
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.types import StringType, StructField, StructType
 
 from src.ingestion.runner.plugin_contract import IngestResult
 
 SUPPORTED_FORMATS = ("csv", "json", "parquet", "avro")
 
+# Bronze column for JSON stored as string; parse in silver with from_json(raw_json, schema)
+RAW_JSON_COL = "raw_json"
+
+# Columns added in foreachBatch; dropped before return
+RUN_ID_COL = "_autoloader_run_id"
+BATCH_ID_COL = "_autoloader_batch_id"
+
 
 class FileAutoloaderPlugin:
     """
     Extract plugin using Databricks Auto Loader (cloudFiles).
-    Reads new files since last checkpoint and returns a single batch DataFrame per run.
+    Micro-batch: trigger(once=True) + foreachBatch to Delta; each batch tagged with run_id.
+    Read back all rows for this run_id (all micro-batches in the current run) and return.
     """
 
     def __init__(self, spark: SparkSession, dbutils: Any):
@@ -65,37 +80,56 @@ class FileAutoloaderPlugin:
                 warnings=[f"landing.format must be one of {SUPPORTED_FORMATS}; got {fmt}"],
             )
 
-        # Schema location required for cloudFiles (schema evolution)
         if not schema_location:
             schema_location = path.rstrip("/") + "/_schema"
 
         options = dict(landing.get("options", {}) or {})
-        infer_cols = options.pop("inferColumnTypes", "true")
-        reader = (
-            self.spark.readStream.format("cloudFiles")
-            .option("cloudFiles.format", fmt)
-            .option("cloudFiles.schemaLocation", schema_location)
-            .option("cloudFiles.inferColumnTypes", infer_cols)
-        )
-
-        # Format-specific options (e.g. CSV: header, sep, escape)
+        # JSON: read as raw text (one line = one row) so bronze stores string; parse in silver with from_json(raw_json, schema)
+        json_as_string = (fmt == "json")
+        if json_as_string:
+            infer_cols = None
+            schema_evolution = None
+            reader = (
+                self.spark.readStream.format("cloudFiles")
+                .option("cloudFiles.format", "text")
+                .option("cloudFiles.schemaLocation", schema_location)
+            )
+        else:
+            infer_cols = options.pop("inferColumnTypes", "true")
+            schema_evolution = options.pop("cloudFiles.schemaEvolutionMode", "addNewColumns")
+            reader = (
+                self.spark.readStream.format("cloudFiles")
+                .option("cloudFiles.format", fmt)
+                .option("cloudFiles.schemaLocation", schema_location)
+                .option("cloudFiles.inferColumnTypes", infer_cols)
+                .option("cloudFiles.schemaEvolutionMode", schema_evolution)
+            )
         for k, v in options.items():
             reader = reader.option(k, str(v))
 
         stream_df = reader.load(path)
+        if json_as_string:
+            stream_df = stream_df.withColumnRenamed("value", RAW_JSON_COL)
 
-        # Single batch: trigger once, write to memory sink, then read back.
-        # Use a short query name to avoid truncation; memory sink may register in spark_catalog.default (Unity Catalog).
-        safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", (run_ctx.run_id + "_" + (obj_cfg.get("object_id") or "obj")))[:48]
-        query_name = f"_al_{safe_name}"
+        batch_output_path = checkpoint.rstrip("/") + "/_batch_output"
+        current_run_id = run_ctx.run_id
+
+        def write_micro_batch(batch_df: DataFrame, batch_id: int) -> None:
+            (
+                batch_df
+                .withColumn(RUN_ID_COL, F.lit(current_run_id))
+                .withColumn(BATCH_ID_COL, F.lit(batch_id))
+                .write.mode("append")
+                .format("delta")
+                .save(batch_output_path)
+            )
 
         try:
             query = (
                 stream_df.writeStream
                 .option("checkpointLocation", checkpoint)
                 .trigger(once=True)
-                .format("memory")
-                .queryName(query_name)
+                .foreachBatch(write_micro_batch)
                 .start()
             )
             query.awaitTermination()
@@ -108,35 +142,41 @@ class FileAutoloaderPlugin:
                 warnings=[f"Auto Loader stream failed: {e}"],
             )
 
-        df = None
-        candidates = [
-            query_name,
-            f"spark_catalog.default.{query_name}",
-            f"hive_metastore.default.{query_name}",
-            f"default.{query_name}",
-        ]
-        for table_ref in candidates:
-            try:
-                df = self.spark.table(table_ref)
-                break
-            except Exception:
-                continue
-        if df is None:
-            return IngestResult(
-                status="SKIPPED",
-                ingest_mode="FILE_AUTOLOADER",
-                df=None,
-                row_count_source=0,
-                warnings=[f"Auto Loader batch table not found (tried: {', '.join(candidates)}). Set spark.sql.legacy.createHiveTableByDefault or use a catalog that has the memory sink table."],
-            )
-        row_count = df.count()
         try:
-            self.spark.catalog.dropTempView(query_name)
-        except Exception:
-            try:
-                self.spark.sql(f"DROP TABLE IF EXISTS spark_catalog.default.{query_name}")
-            except Exception:
-                pass
+            batch_table = self.spark.read.format("delta").load(batch_output_path)
+            print(batch_table.schema)
+            if batch_table.isEmpty():
+                schema = batch_table.schema
+                for drop_col in (RUN_ID_COL, BATCH_ID_COL):
+                    if drop_col in schema.names:
+                        schema = StructType([f for f in schema.fields if f.name != drop_col])
+                if json_as_string and RAW_JSON_COL not in schema.names:
+                    schema = StructType([StructField(RAW_JSON_COL, StringType(), True)])
+                df = self.spark.createDataFrame([], schema)
+                row_count = 0
+            else:
+                if RUN_ID_COL in batch_table.schema.names:
+                    df = batch_table.filter(F.col(RUN_ID_COL) == current_run_id).drop(RUN_ID_COL, BATCH_ID_COL)
+                else:
+                    max_batch = batch_table.agg(F.max(BATCH_ID_COL)).first()[0]
+                    if max_batch is not None:
+                        df = batch_table.filter(F.col(BATCH_ID_COL) == max_batch).drop(BATCH_ID_COL)
+                    else:
+                        df = batch_table.drop(BATCH_ID_COL) if BATCH_ID_COL in batch_table.schema.names else batch_table
+                row_count = df.count()
+        except Exception as e:
+            err_msg = str(e).lower()
+            if "path does not exist" in err_msg or "cannot find" in err_msg or "no such file" in err_msg:
+                df = self.spark.createDataFrame([], StructType([]))
+                row_count = 0
+            else:
+                return IngestResult(
+                    status="SKIPPED",
+                    ingest_mode="FILE_AUTOLOADER",
+                    df=None,
+                    row_count_source=0,
+                    warnings=[f"Failed to read Auto Loader batch from {batch_output_path}: {e}"],
+                )
 
         return IngestResult(
             status="SUCCESS",

@@ -41,17 +41,24 @@ sources:
         action_on_fail: warn
 
     objects:
-      # CSV – header and inferSchema (or provide schema_location for fixed schema)
-      - name: accounts
+      # Parquet – columnar; no extra options typically
+      - name: parquet_data
         landing:
-          path: "${env.landing_base_path}/00_commercial_insurance/accounts"
-          format: csv
-          options:
-            header: "true"
-            inferSchema: "true"
-            sep: ","
+          path: "${env.landing_base_path}/00_commercial_insurance/parquet_test_files/"
+          format: parquet
         write:
           mode: append
+      # # CSV – header and inferSchema (or provide schema_location for fixed schema)
+      # - name: accounts
+      #   landing:
+      #     path: "${env.landing_base_path}/00_commercial_insurance/accounts"
+      #     format: csv
+      #     options:
+      #       header: "true"
+      #       inferSchema: "true"
+      #       sep: ","
+      #   write:
+      #     mode: append
 
       # # JSON – one JSON object per line or multi-line
       # - name: json_events
@@ -60,16 +67,11 @@ sources:
       #     format: json
       #     options:
       #       multiline: "true"
+      #       schemaEvolutionMode: "addNewColumns"
       #   write:
       #     mode: append
 
-      # # Parquet – columnar; no extra options typically
-      # - name: parquet_data
-      #   landing:
-      #     path: "${env.landing_base_path}/00_commercial_insurance/parquet_test_files/"
-      #     format: parquet
-      #   write:
-      #     mode: append
+      
 
       # # Avro – schema often in file or schema_location
       # - name: events_avro

@@ -12,7 +12,7 @@
 
 dbutils.widgets.text("TARGET_ENV", "dev")  # Target environment (e.g., dev, prod)
 dbutils.widgets.text("LAYER", "bronze")    # Layer: bronze | silver | gold
-dbutils.widgets.text("SCHEDULE_GROUP", "P0_bigquery")  # Ingestion schedule group
+dbutils.widgets.text("SCHEDULE_GROUP", "P0_file_autoloader")  # Ingestion schedule group
 dbutils.widgets.text(
     "REGISTRY_PATH",
     "abfss://config@<storage>.dfs.core.windows.net/compiled/dev/users/<alias>/latest/compiled_registry.json"  # Path to registry config
