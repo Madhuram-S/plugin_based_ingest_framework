@@ -15,9 +15,9 @@ connections:
     auth:
       mode: service_account_json        # service_account_json | service_account_base64
       secret_ref:
-        path: "${env.gcp_sa_path}"      # For service_account_json, path must be dbfs
+        path: "${env.sa_gcp_json}"      # For service_account_json, path must be dbfs
         scope: "${env.secret_scope}"
-        key: "gcp_sa_json"
+        key: "sa_gcp_key"
 
   # api_harvest:
   #   type: api

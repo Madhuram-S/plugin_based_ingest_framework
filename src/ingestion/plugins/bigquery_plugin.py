@@ -169,7 +169,6 @@ class BigQueryPlugin:
         and reads a table or view from BigQuery.
         Returns a IngestResult instance.
         """
-        prior_state = {}
         ingestion = obj_cfg.get("ingestion", {}) or {}
         max_retries = ingestion.get("max_retries", 3)
         retry_backoff_seconds = ingestion.get("retry_backoff_seconds", 5)
