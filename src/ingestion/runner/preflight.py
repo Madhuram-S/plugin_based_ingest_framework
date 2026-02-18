@@ -9,9 +9,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 _VAR_PATTERN = re.compile(r"\$\{[^}]+\}")  # lingering ${...} must NOT exist in compiled config
 
-SUPPORTED_SOURCE_TYPES = {"bigquery", "api", "file", "sql"}
+SUPPORTED_SOURCE_TYPES = {"bigquery", "api", "file", "file_autoloader", "sql"}
 SUPPORTED_WRITE_MODES = {"append", "merge", "overwrite"}
 SUPPORTED_LOAD_MODES = {"full", "incremental"}
+VALID_LAYERS = {"bronze", "silver", "gold"}
 
 @dataclass
 class PreflightIssue:
@@ -43,8 +44,15 @@ def validate_object_config(obj: Dict[str, Any]) -> List[PreflightIssue]:
         issues.append(PreflightIssue("WARN", oid, "Object disabled; skipping deep validation."))
         return issues
 
-    # Required fields
-    for f in ["source_type", "source_system", "object_name", "bronze_table", "schedule_group"]:
+    # Required fields: target_table (or bronze_table for backward compat) and layer
+    layer = (obj.get("layer") or "bronze").lower()
+    if layer not in VALID_LAYERS:
+        issues.append(PreflightIssue("ERROR", oid, f"Invalid layer={layer}; must be one of {sorted(VALID_LAYERS)}"))
+    target_table = obj.get("target_table") or (obj.get("bronze_table") if layer == "bronze" else None)
+    if not target_table:
+        issues.append(PreflightIssue("ERROR", oid, "Missing required field: target_table (or bronze_table when layer=bronze)"))
+
+    for f in ["source_type", "source_system", "object_name", "schedule_group"]:
         if not obj.get(f):
             issues.append(PreflightIssue("ERROR", oid, f"Missing required field: {f}"))
 
@@ -110,6 +118,16 @@ def validate_object_config(obj: Dict[str, Any]) -> List[PreflightIssue]:
         inc_mode = (obj.get("incremental", {}) or {}).get("mode", "file_autoloader")
         if inc_mode == "file_autoloader" and not landing.get("checkpoint"):
             issues.append(PreflightIssue("ERROR", oid, "Auto Loader requires landing.checkpoint"))
+
+    if st == "file_autoloader":
+        landing = obj.get("landing", {}) or {}
+        if not landing.get("path"):
+            issues.append(PreflightIssue("ERROR", oid, "file_autoloader requires landing.path"))
+        if not landing.get("checkpoint"):
+            issues.append(PreflightIssue("ERROR", oid, "file_autoloader requires landing.checkpoint (or set in defaults)"))
+        fmt = (landing.get("format") or "csv").lower()
+        if fmt not in ("csv", "json", "parquet", "avro"):
+            issues.append(PreflightIssue("ERROR", oid, f"file_autoloader landing.format must be csv|json|parquet|avro; got {fmt}"))
 
     # lightweight “raw secret smell” (warn only)
     raw = str(obj).lower()

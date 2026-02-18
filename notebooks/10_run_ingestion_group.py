@@ -1,6 +1,17 @@
 # Databricks notebook source
-# Create Databricks notebook widgets for parameterization
+# MAGIC %load_ext autoreload
+# MAGIC %autoreload 2
+# MAGIC # Enables autoreload; learn more at https://docs.databricks.com/en/files/workspace-modules.html#autoreload-for-python-modules
+# MAGIC # To disable autoreload; run %autoreload 0
+
+# COMMAND ----------
+
+# MAGIC %reload_ext autoreload
+
+# COMMAND ----------
+
 dbutils.widgets.text("TARGET_ENV", "dev")  # Target environment (e.g., dev, prod)
+dbutils.widgets.text("LAYER", "bronze")    # Layer: bronze | silver | gold
 dbutils.widgets.text("SCHEDULE_GROUP", "P0_bigquery")  # Ingestion schedule group
 dbutils.widgets.text(
     "REGISTRY_PATH",
@@ -8,13 +19,25 @@ dbutils.widgets.text(
 )
 dbutils.widgets.text("CONFIG_VERSION", "unknown")     # Config version (e.g., git SHA or bundle version)
 dbutils.widgets.text("STRICT_MODE", "false")          # Strict mode flag (recommended true for prod P0)
+dbutils.widgets.text("SHARD_COUNT", "")               # Optional: total shards (e.g., 10)
+dbutils.widgets.text("SHARD_ID", "")                  # Optional: this shard id (0..SHARD_COUNT-1)
+dbutils.widgets.text("OBJECT_ID", "")                 # Optional: run single object (for For-each over object_ids = full parallelism) <env>|<schema>|<table>
 
 # Retrieve widget values for use in the notebook
 TARGET_ENV = dbutils.widgets.get("TARGET_ENV")
+LAYER = dbutils.widgets.get("LAYER").strip() or "bronze"
 SCHEDULE_GROUP = dbutils.widgets.get("SCHEDULE_GROUP")
 REGISTRY_PATH = dbutils.widgets.get("REGISTRY_PATH")
 CONFIG_VERSION = dbutils.widgets.get("CONFIG_VERSION")
 STRICT_MODE = dbutils.widgets.get("STRICT_MODE").lower() == "true"  # Convert to boolean
+
+SHARD_COUNT_RAW = dbutils.widgets.get("SHARD_COUNT").strip()
+SHARD_ID_RAW = dbutils.widgets.get("SHARD_ID").strip()
+SHARD_COUNT = int(SHARD_COUNT_RAW) if SHARD_COUNT_RAW else None
+SHARD_ID = int(SHARD_ID_RAW) if SHARD_ID_RAW else None
+
+OBJECT_ID_RAW = dbutils.widgets.get("OBJECT_ID").strip()
+OBJECT_IDS = [OBJECT_ID_RAW] if OBJECT_ID_RAW else None  # One task per object when set
 
 # COMMAND ----------
 
@@ -40,8 +63,13 @@ run_ingestion_group(
     schedule_group=SCHEDULE_GROUP,
     registry_path=REGISTRY_PATH,
     config_version=CONFIG_VERSION,
-    strict_mode=STRICT_MODE
+    strict_mode=STRICT_MODE,
+    layer=LAYER,
+    shard_id=SHARD_ID,
+    shard_count=SHARD_COUNT,
+    object_ids=OBJECT_IDS,
 )
+
 
 # COMMAND ----------
 

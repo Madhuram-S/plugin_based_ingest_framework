@@ -18,26 +18,25 @@ class BronzeWriter:
             .withColumn("ingest_mode", F.lit(ingest_mode))
         )
 
-    def write(self, df: DataFrame, bronze_table: str, mode: str, primary_key: List[str]) -> int:
+    def write(self, df: DataFrame, target_table: str, mode: str, primary_key: List[str]) -> int:
         """
-        Returns rows_written if cheap to estimate; otherwise returns -1.
+        Write to target_table (bronze, silver, or gold). Returns rows_written if cheap to estimate; otherwise -1.
         For streaming, your plugin should handle writes separately.
         """
         mode = (mode or "append").lower()
 
         if mode == "overwrite":
-            df.write.format("delta").mode("overwrite").saveAsTable(bronze_table)
+            df.write.format("delta").mode("overwrite").saveAsTable(target_table)
             return df.count()
 
         if mode == "append" or not primary_key:
-            df.write.format("delta").mode("append").saveAsTable(bronze_table)
+            df.write.format("delta").mode("append").saveAsTable(target_table)
             return df.count()
 
         # Merge (upsert)
-        # Ensure target exists with schema. Using a safe create-if-not-exists pattern:
-        self.spark.sql(f"CREATE TABLE IF NOT EXISTS {bronze_table} USING DELTA AS SELECT * FROM (SELECT 1 as __dummy) WHERE 1=0")
+        self.spark.sql(f"CREATE TABLE IF NOT EXISTS {target_table} USING DELTA AS SELECT * FROM (SELECT 1 as __dummy) WHERE 1=0")
 
-        staging_view = "__staging_bronze_write"
+        staging_view = "__staging_layer_write"
         df.createOrReplaceTempView(staging_view)
 
         on_clause = " AND ".join([f"t.`{c}` = s.`{c}`" for c in primary_key])
@@ -46,7 +45,7 @@ class BronzeWriter:
         insert_vals = ", ".join([f"s.`{c}`" for c in df.columns])
 
         self.spark.sql(f"""
-        MERGE INTO {bronze_table} t
+        MERGE INTO {target_table} t
         USING {staging_view} s
         ON {on_clause}
         WHEN MATCHED THEN UPDATE SET {set_clause}

@@ -27,11 +27,18 @@ def _read_yaml(path: Path) -> Dict[str, Any]:
 
 
 def deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
-    """Deep-merge b into a (dicts merge, lists overwrite)."""
+    """
+    Deep-merge b into a.
+    - Dicts: recursive merge.
+    - Key "sources": lists are concatenated so multiple sources*.yml add sources instead of overwriting.
+    - Other lists: overwrite (original behavior).
+    """
     out = dict(a)
     for k, v in (b or {}).items():
         if k in out and isinstance(out[k], dict) and isinstance(v, dict):
             out[k] = deep_merge(out[k], v)
+        elif k == "sources" and isinstance(out.get(k), list) and isinstance(v, list):
+            out[k] = out[k] + v
         else:
             out[k] = v
     return out
@@ -70,13 +77,14 @@ def _safe_name(name: str) -> str:
 @dataclass
 class LoadedObject:
     env: str
+    layer: str  # "bronze" | "silver" | "gold"
     schedule_group: str
     enabled: bool
     source_system: str
     source_type: str
     object_name: str
     connection: str
-    bronze_table: str
+    target_table: str  # canonical; bronze_table kept in raw for backward compat when layer=bronze
     raw: Dict[str, Any]
 
 
@@ -189,20 +197,36 @@ class ConfigLoader:
                 schedule_group = sched.get("group") or "default"
                 obj_cfg["schedule_group"] = schedule_group
 
-                # Target -> bronze_table
+                # layer (default bronze)
+                layer = (obj_cfg.get("layer") or s.get("layer") or "bronze").lower()
+                if layer not in ("bronze", "silver", "gold"):
+                    raise ConfigError(f"Invalid layer={layer} for object={obj_name}; must be bronze, silver, or gold")
+                obj_cfg["layer"] = layer
+
+                # Target -> target_table (schema by layer from env if not set on target)
                 tgt = obj_cfg.get("target", {}) or {}
                 catalog = tgt.get("catalog")
                 schema = tgt.get("schema")
+                env_block = cfg.get("env", {}) or {}
+                if not schema and env_block:
+                    if layer == "bronze":
+                        schema = env_block.get("bronze_schema") or env_block.get("schema") or "bronze"
+                    elif layer == "silver":
+                        schema = env_block.get("silver_schema") or "silver"
+                    elif layer == "gold":
+                        schema = env_block.get("gold_schema") or "gold"
                 prefix = tgt.get("table_prefix", "")
 
                 if not catalog or not schema:
-                    raise ConfigError(f"target.catalog/target.schema required for object={obj_name}")
+                    raise ConfigError(f"target.catalog and target.schema (or env {layer}_schema) required for object={obj_name}")
 
-                bronze_table = f"{catalog}.{schema}.{prefix}{_safe_name(obj_name)}"
-                obj_cfg["bronze_table"] = bronze_table
+                target_table = f"{catalog}.{schema}.{prefix}{_safe_name(obj_name)}"
+                obj_cfg["target_table"] = target_table
+                if layer == "bronze":
+                    obj_cfg["bronze_table"] = target_table  # backward compat
 
-                # Derive landing paths for file sources (if not explicitly set)
-                if source_type == "file":
+                # Derive landing paths for file / file_autoloader sources (if not explicitly set)
+                if source_type in ("file", "file_autoloader"):
                     conn_opts = connections[connection]
                     root_path = conn_opts.get("root_path")
                     landing = obj_cfg.get("landing", {}) or {}
@@ -210,11 +234,15 @@ class ConfigLoader:
                         if not root_path:
                             raise ConfigError(f"connections.{connection}.root_path required to derive landing.path")
                         landing["path"] = f"{root_path.rstrip('/')}/{_safe_name(obj_name)}/"
-                    # checkpoint/schema_location derived if using autoloader
-                    inc = obj_cfg.get("incremental", {}) or {}
-                    if (inc.get("mode") or "").lower() == "file_autoloader":
+                    # file_autoloader always needs checkpoint/schema_location; file needs them when incremental.mode is file_autoloader
+                    if source_type == "file_autoloader":
                         landing.setdefault("checkpoint", f"{landing['path'].rstrip('/')}/_checkpoint")
                         landing.setdefault("schema_location", f"{landing['path'].rstrip('/')}/_schema")
+                    else:
+                        inc = obj_cfg.get("incremental", {}) or {}
+                        if (inc.get("mode") or "").lower() == "file_autoloader":
+                            landing.setdefault("checkpoint", f"{landing['path'].rstrip('/')}/_checkpoint")
+                            landing.setdefault("schema_location", f"{landing['path'].rstrip('/')}/_schema")
                     obj_cfg["landing"] = landing
 
                 # Inject connection_options (fully expanded, compile-time)
@@ -227,13 +255,14 @@ class ConfigLoader:
                 loaded.append(
                     LoadedObject(
                         env=env_name,
+                        layer=layer,
                         schedule_group=schedule_group,
                         enabled=enabled,
                         source_system=source_system,
                         source_type=source_type,
                         object_name=obj_name,
                         connection=connection,
-                        bronze_table=bronze_table,
+                        target_table=target_table,
                         raw=obj_cfg,
                     )
                 )

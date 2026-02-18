@@ -41,6 +41,10 @@ registry['generated_at'] = generated_at
 
 # COMMAND ----------
 
+registry
+
+# COMMAND ----------
+
 content = json.dumps(registry, indent=2, sort_keys=True)
 sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
 registry["content_sha256"] = sha

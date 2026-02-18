@@ -22,11 +22,11 @@ class DQExecutor:
         if not checks:
             return
 
-        bronze_table = obj_cfg.get("bronze_table")
-        if not bronze_table:
+        target_table = obj_cfg.get("target_table") or obj_cfg.get("bronze_table")
+        if not target_table:
             return
 
-        df = self.spark.table(bronze_table)
+        df = self.spark.table(target_table)
 
         for c in checks:
             ctype = c.get("type")

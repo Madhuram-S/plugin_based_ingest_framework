@@ -1,0 +1,80 @@
+# sources_file_autoloader.yml
+# Auto Loader–based ingestion for CSV, JSON, Parquet, and Avro.
+# Uses source_type: file_autoloader; runner calls FileAutoloaderPlugin which uses
+# Spark cloudFiles + trigger(once=True) to read only new files since last checkpoint.
+#
+# Required per object (or from defaults): landing.path, landing.checkpoint (derived if omitted).
+# Optional: landing.format (csv|json|parquet|avro), landing.schema_location, landing.options.
+
+sources:
+  - source_system: landing_autoloader
+    source_type: file_autoloader
+    connection: adls_ins
+    enabled: true
+
+    defaults:
+      schedule:
+        enabled: true
+        group: P0_file_autoloader
+        cron: "0 */6 * * *"
+        timezone: "America/New_York"
+
+      target:
+        catalog: "${env.catalog}"
+        schema: "${env.bronze_schema}"
+        table_prefix: "ins_"
+
+      landing:
+        # format and options can be overridden per object
+        format: csv
+        options:
+          header: "true"
+          inferSchema: "true"
+        # checkpoint and schema_location are derived: {path}/_checkpoint, {path}/_schema
+
+      write:
+        mode: append
+        primary_key: []
+
+      dq:
+        ruleset: bronze_minimal
+        action_on_fail: warn
+
+    objects:
+      # CSV – header and inferSchema (or provide schema_location for fixed schema)
+      - name: accounts
+        landing:
+          path: "${env.landing_base_path}/00_commercial_insurance/accounts"
+          format: csv
+          options:
+            header: "true"
+            inferSchema: "true"
+            sep: ","
+        write:
+          mode: append
+
+      # # JSON – one JSON object per line or multi-line
+      # - name: json_events
+      #   landing:
+      #     path: "${env.landing_base_path}/00_commercial_insurance/json_test_files"
+      #     format: json
+      #     options:
+      #       multiline: "true"
+      #   write:
+      #     mode: append
+
+      # # Parquet – columnar; no extra options typically
+      # - name: parquet_data
+      #   landing:
+      #     path: "${env.landing_base_path}/00_commercial_insurance/parquet_test_files/"
+      #     format: parquet
+      #   write:
+      #     mode: append
+
+      # # Avro – schema often in file or schema_location
+      # - name: events_avro
+      #   landing:
+      #     path: "${env.landing_base_path}/00_commercial_insurance/avro_test_file"
+      #     format: avro
+      #   write:
+      #     mode: append

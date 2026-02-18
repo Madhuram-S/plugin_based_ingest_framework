@@ -1,0 +1,95 @@
+# Azure DevOps pipeline: generate bronze ingestion job definition for prod and deploy bundle.
+# Prod job flow is generated in CI so concurrency/registry_path/etc. are controlled by pipeline variables.
+#
+# Setup:
+# 1. Create a variable group "bronze-prod" (or set variables in pipeline UI / Azure DevOps) with:
+#    REGISTRY_PATH_PROD, SCHEDULE_GROUP, CONCURRENCY, CONFIG_VERSION_PROD, STRICT_MODE_PROD, etc.
+# 2. Create a service connection for Databricks (e.g. Databricks workspace URL + PAT or AAD).
+# 3. Ensure the bundle root is this repo (or set workingDirectory) and bundle has a target "prod" that
+#    includes the generated job (see README).
+#
+# Trigger: adjust branch and paths for your repo.
+trigger:
+  branches:
+    include:
+      - main
+      - prod
+  paths:
+    include:
+      - etl_ingest_framework/**
+      - pipelines/deploy-bronze-prod.yml
+
+variables:
+  # Defaults; override in variable group "bronze-prod" or in pipeline UI for prod.
+  - name: MODE
+    value: parallel_by_object
+  - name: CONCURRENCY
+    value: "20"
+  - name: TARGET_ENV
+    value: prod
+  - name: LAYER
+    value: bronze
+  - name: SCHEDULE_GROUP
+    value: P0_bigquery
+  - name: REGISTRY_PATH_PROD
+    value: abfss://config@<storage>.dfs.core.windows.net/compiled/prod/latest/compiled_registry.json
+  - name: CONFIG_VERSION_PROD
+    value: $(Build.BuildId)
+  - name: STRICT_MODE_PROD
+    value: "true"
+  - name: SHARD_COUNT
+    value: "10"
+  - name: GENERATED_JOB_PATH
+    value: etl_ingest_framework/configs/workflow_bronze_prod_generated.yml
+# Optional: use a variable group for secrets and prod-specific values.
+# - group: bronze-prod
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+    fetchDepth: 1
+
+  - task: UsePythonVersion@0
+    displayName: Use Python 3.x
+    inputs:
+      versionSpec: "3.x"
+      addToPath: true
+
+  - script: |
+      set -e
+      cd $(Build.SourcesDirectory)
+      python -m pip install --quiet --upgrade pip
+      EXTRA_ARGS=""
+      if [ "$(MODE)" = "parallel_by_object" ]; then
+        EXTRA_ARGS="--concurrency $(CONCURRENCY)"
+      else
+        EXTRA_ARGS="--shard_count $(SHARD_COUNT)"
+      fi
+      python etl_ingest_framework/scripts/generate_bronze_sharded_job.py \
+        --mode $(MODE) \
+        $EXTRA_ARGS \
+        --target_env $(TARGET_ENV) \
+        --layer $(LAYER) \
+        --schedule_group $(SCHEDULE_GROUP) \
+        --registry_path "$(REGISTRY_PATH_PROD)" \
+        --config_version "$(CONFIG_VERSION_PROD)" \
+        --strict_mode "$(STRICT_MODE_PROD)" \
+        --out $(GENERATED_JOB_PATH)
+      echo "Generated job definition: $(GENERATED_JOB_PATH)"
+    displayName: Generate bronze job definition (prod)
+
+  - script: |
+      set -e
+      cd $(Build.SourcesDirectory)
+      # Ensure Databricks CLI and bundle deploy; use auth from service connection or env (DATABRICKS_HOST, DATABRICKS_TOKEN).
+      pip install databricks-cli databricks-bundles --quiet
+      databricks bundle deploy -t prod
+    displayName: Deploy Databricks bundle (prod)
+    env:
+      # If using Azure DevOps Databricks service connection, set these in the task or via variable group (secret).
+      # DATABRICKS_HOST: $(DatabricksHost)
+      # DATABRICKS_TOKEN: $(DatabricksToken)
+      DATABRICKS_HOST: $(DATABRICKS_HOST)
+      DATABRICKS_TOKEN: $(DATABRICKS_TOKEN)

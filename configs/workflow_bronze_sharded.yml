@@ -1,0 +1,36 @@
+# Bronze ingestion job: one For-each task runs the ingestion notebook per shard in parallel.
+# Each iteration gets SHARD_ID = 0, 1, ..., (SHARD_COUNT-1). No merge/update conflicts on Ops/DQ tables.
+#
+# Deploy: use with Databricks Asset Bundles, or generate job JSON via scripts/generate_bronze_sharded_job.py
+# Set REGISTRY_PATH (and optionally TARGET_ENV, SCHEDULE_GROUP, CONFIG_VERSION) for your environment.
+
+resources:
+  jobs:
+    bronze_ingestion_sharded:
+      name: bronze_ingestion_sharded
+      max_concurrent_runs: 1
+      job_clusters:
+        - job_cluster_key: job_cluster
+          new_cluster:
+            node_type_id: i3.xlarge
+            spark_version: 13.3.x-scala2.12
+            num_workers: 1
+      tasks:
+        - task_key: bronze_for_each_shards
+          for_each_task:
+            inputs: "[0,1,2,3,4,5,6,7,8,9]"
+            concurrency: 10
+            task:
+              task_key: run_ingestion_shard
+              job_cluster_key: job_cluster
+              notebook_task:
+                notebook_path: ../notebooks/10_run_ingestion_group
+                base_parameters:
+                  TARGET_ENV: "dev"
+                  LAYER: "bronze"
+                  SCHEDULE_GROUP: "P0_bigquery"
+                  REGISTRY_PATH: "abfss://config@<storage>.dfs.core.windows.net/compiled/dev/users/<alias>/latest/compiled_registry.json"
+                  CONFIG_VERSION: "unknown"
+                  STRICT_MODE: "false"
+                  SHARD_ID: "{{input}}"
+                  SHARD_COUNT: "10"
