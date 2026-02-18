@@ -1,0 +1,55 @@
+# sources_bigquery_ingestion.yml
+sources:
+  - source_system: epic
+    source_type: table
+    connection: bigquery
+    enabled: true
+    priority: P0
+
+    defaults:
+      schedule:
+        enabled: true
+        group: P0_file_based
+        cron: "0 */6 * * *"
+        timezone: "America/New_York"
+
+      source:
+        project_id: "cloud-hylant-test"
+        dataset: "bigquery-public-data"
+        schema: "samples"
+
+      target:
+        catalog: "andrea_bronze"
+        # catalog: "${env.name}_bronze"
+        schema: "epic"
+        # table_prefix: NULL
+
+      landing:
+        format: parquet
+        options:
+          header: "true"
+          inferSchema: "true"
+        # checkpoint and schema_location are derived by loader if not explicitly provided
+        
+      load:
+        ingest_mode: full        # full | incremental
+        watermark_column: NULL
+        initial_value: NULL     # must be INT or STRING
+   
+      write:
+        mode: overwrite        # append | overwrite | upsert
+        primary_key: []        # PK used in case of upsert
+
+      dq:
+        ruleset: bronze_minimal
+        action_on_fail: warn
+
+    objects:
+      - name: shakespeare
+        source:
+          table: "shakespeare"
+          query: "SELECT * FROM `cloud-hylant-test.samples.shakespeare` WHERE word_count > 10"
+          tmp_vw: 
+        # Optional explicit landing path (if omitted, loader derives from connections.root_path + name)
+        # landing: # required if we only dump the data to landing
+        #   path: "${env.landing_base_path}/epic/shakespeare"

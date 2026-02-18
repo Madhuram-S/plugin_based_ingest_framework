@@ -10,13 +10,14 @@ connections:
         # key: ${env.storage_name}-accesskey
         key: adls-client-id
 
-  # bigquery_prod:
-  #   type: bigquery
-  #   auth:
-  #     mode: service_account_json
-  #     secret_ref:
-  #       scope: "{{env.secret_scope}}"
-  #       key: "gcp_sa_json"
+  bigquery:
+    type: bigquery
+    auth:
+      mode: service_account_json        # service_account_json | service_account_base64
+      secret_ref:
+        path: "${env.gcp_sa_path}"      # For service_account_json, path must be dbfs
+        scope: "${env.secret_scope}"
+        key: "gcp_sa_json"
 
   # api_harvest:
   #   type: api
