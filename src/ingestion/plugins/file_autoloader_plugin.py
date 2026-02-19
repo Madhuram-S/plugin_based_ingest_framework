@@ -5,6 +5,11 @@ Uses Spark Structured Streaming with cloudFiles source, trigger(once=True),
 and a Delta micro-batch sink (foreachBatch). Each micro-batch is written with
 run_id and batch_id; we read back all rows for the current run_id and return
 them (all micro-batches in this run). No in-memory sink.
+
+JSON: Ingested as raw text (one line = one row). Bronze gets a single string
+column `raw_json`; no parsing or schema inference, so no UnknownFieldException.
+Parse in silver with from_json(raw_json, schema) or schema_of_json. Use
+JSON Lines (one JSON object per line) for one record per row.
 """
 from __future__ import annotations
 
@@ -13,11 +18,14 @@ from typing import Any, Dict
 from pyspark.sql import DataFrame
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import StructType
+from pyspark.sql.types import StringType, StructField, StructType
 
 from src.ingestion.runner.plugin_contract import IngestResult
 
 SUPPORTED_FORMATS = ("csv", "json", "parquet", "avro")
+
+# Bronze column for JSON stored as string; parse in silver with from_json(raw_json, schema)
+RAW_JSON_COL = "raw_json"
 
 # Columns added in foreachBatch; dropped before return
 RUN_ID_COL = "_autoloader_run_id"
@@ -76,13 +84,26 @@ class FileAutoloaderPlugin:
             schema_location = path.rstrip("/") + "/_schema"
 
         options = dict(landing.get("options", {}) or {})
-        infer_cols = options.pop("inferColumnTypes", "true")
-        reader = (
-            self.spark.readStream.format("cloudFiles")
-            .option("cloudFiles.format", fmt)
-            .option("cloudFiles.schemaLocation", schema_location)
-            .option("cloudFiles.inferColumnTypes", infer_cols)
-        )
+        # JSON: read as raw text (one line = one row) so bronze stores string; parse in silver with from_json(raw_json, schema)
+        json_as_string = (fmt == "json")
+        if json_as_string:
+            infer_cols = None
+            schema_evolution = None
+            reader = (
+                self.spark.readStream.format("cloudFiles")
+                .option("cloudFiles.format", "text")
+                .option("cloudFiles.schemaLocation", schema_location)
+            )
+        else:
+            infer_cols = options.pop("inferColumnTypes", "true")
+            schema_evolution = options.pop("cloudFiles.schemaEvolutionMode", "addNewColumns")
+            reader = (
+                self.spark.readStream.format("cloudFiles")
+                .option("cloudFiles.format", fmt)
+                .option("cloudFiles.schemaLocation", schema_location)
+                .option("cloudFiles.inferColumnTypes", infer_cols)
+                .option("cloudFiles.schemaEvolutionMode", schema_evolution)
+            )
         for k, v in options.items():
             reader = reader.option(k, str(v))
 
@@ -92,6 +113,12 @@ class FileAutoloaderPlugin:
         current_run_id = run_ctx.run_id
 
         def write_micro_batch(batch_df: DataFrame, batch_id: int) -> None:
+            # JSON-as-string: normalize to raw_json column inside the batch write (avoids schema/unknown-field issues on Delta write)
+            if json_as_string:
+                if "value" in batch_df.columns:
+                    batch_df = batch_df.withColumnRenamed("value", RAW_JSON_COL)
+                elif RAW_JSON_COL not in batch_df.columns:
+                    batch_df = batch_df.select(F.to_json(F.struct(*batch_df.columns)).alias(RAW_JSON_COL))
             (
                 batch_df
                 .withColumn(RUN_ID_COL, F.lit(current_run_id))
@@ -126,6 +153,8 @@ class FileAutoloaderPlugin:
                 for drop_col in (RUN_ID_COL, BATCH_ID_COL):
                     if drop_col in schema.names:
                         schema = StructType([f for f in schema.fields if f.name != drop_col])
+                if json_as_string and RAW_JSON_COL not in schema.names:
+                    schema = StructType([StructField(RAW_JSON_COL, StringType(), True)])
                 df = self.spark.createDataFrame([], schema)
                 row_count = 0
             else:

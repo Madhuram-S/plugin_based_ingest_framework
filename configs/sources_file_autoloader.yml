@@ -41,13 +41,17 @@ sources:
         action_on_fail: warn
 
     objects:
-      # Parquet – columnar; no extra options typically
-      - name: parquet_data
+      # JSON – one JSON object per line or multi-line
+      - name: json_events
         landing:
-          path: "${env.landing_base_path}/00_commercial_insurance/parquet_test_files/"
-          format: parquet
+          path: "${env.landing_base_path}/00_commercial_insurance/json_test_files"
+          format: json
+          options:
+            multiline: "true"
+            schemaEvolutionMode: "addNewColumns"
         write:
           mode: append
+
       # # CSV – header and inferSchema (or provide schema_location for fixed schema)
       # - name: accounts
       #   landing:
@@ -60,23 +64,22 @@ sources:
       #   write:
       #     mode: append
 
-      # # JSON – one JSON object per line or multi-line
-      # - name: json_events
-      #   landing:
-      #     path: "${env.landing_base_path}/00_commercial_insurance/json_test_files"
-      #     format: json
-      #     options:
-      #       multiline: "true"
-      #       schemaEvolutionMode: "addNewColumns"
-      #   write:
-      #     mode: append
-
       
 
-      # # Avro – schema often in file or schema_location
-      # - name: events_avro
+      # Parquet – columnar; no extra options typically
+      # - name: parquet_data
       #   landing:
-      #     path: "${env.landing_base_path}/00_commercial_insurance/avro_test_file"
-      #     format: avro
+      #     path: "${env.landing_base_path}/00_commercial_insurance/parquet_test_files/"
+      #     format: parquet
       #   write:
       #     mode: append
+
+      # Avro – schema often in file or schema_location
+      - name: events_avro
+        landing:
+          path: "${env.landing_base_path}/00_commercial_insurance/avro_test_file"
+          format: avro
+        write:
+          mode: append
+
+      

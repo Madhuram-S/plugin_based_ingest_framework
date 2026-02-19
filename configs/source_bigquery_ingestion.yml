@@ -9,7 +9,7 @@ sources:
     defaults:
       schedule:
         enabled: true
-        group: P0_file_based
+        group: P0_biquery_full
         cron: "0 */6 * * *"
         timezone: "America/New_York"
 

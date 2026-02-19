@@ -51,7 +51,8 @@ def run_ingestion_group(
 
     state = StateStore(spark, f"{catalog}.{ops_schema}.ctl_ingestion_state")
     ops = OpsLogger(spark, f"{catalog}.{ops_schema}.ops_run_log", f"{catalog}.{ops_schema}.ops_dq_log")
-    writer = BronzeWriter(spark)
+    audit_columns = (registry.get("conventions") or {}).get("audit_columns")
+    writer = BronzeWriter(spark, audit_columns=audit_columns)
     dq = DQExecutor(spark, ops)
     lock = ObjectLock(spark, f"{catalog}.{ops_schema}.ops_object_lock")
 

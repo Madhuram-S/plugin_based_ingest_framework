@@ -77,7 +77,8 @@ def run_ingestion_group(
     ops_schema = "ops"  # keep constant; map via UC grants
     state = StateStore(spark, f"{catalog}.{ops_schema}.ctl_ingestion_state")
     ops = OpsLogger(spark, f"{catalog}.{ops_schema}.ops_run_log", f"{catalog}.{ops_schema}.ops_dq_log")
-    writer = BronzeWriter(spark)
+    audit_columns = (registry.get("conventions") or {}).get("audit_columns")
+    writer = BronzeWriter(spark, audit_columns=audit_columns)
     dq = DQExecutor(spark, ops)
 
     # Optional but recommended for P0: object-level lock
@@ -193,7 +194,7 @@ def _run_one_object(
     obj_layer = obj.get("layer") or "bronze"
 
     # Capture start time so END rows can store it (self-contained without joining to START)
-    start_ts = datetime.now(ZoneInfo("America/New_York"))    
+    start_ts = datetime.now(ZoneInfo("America/New_York"))
 
     # Log start
     ops.log_run_start(
