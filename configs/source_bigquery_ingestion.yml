@@ -14,7 +14,7 @@ sources:
         timezone: "America/New_York"
 
       source:
-        project_id: "cloud-hylant-test"
+        project_id: "cloud-test"
         dataset: "bigquery-public-data"
         schema: "samples"
 
@@ -48,7 +48,7 @@ sources:
       - name: shakespeare
         source:
           table: "shakespeare"
-          query: "SELECT * FROM `cloud-hylant-test.samples.shakespeare` WHERE word_count > 10"
+          query: "SELECT * FROM `cloud-test.samples.shakespeare` WHERE word_count > 10"
           tmp_vw: 
         # Optional explicit landing path (if omitted, loader derives from connections.root_path + name)
         # landing: # required if we only dump the data to landing
